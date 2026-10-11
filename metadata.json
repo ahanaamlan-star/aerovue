@@ -1,0 +1,6 @@
+{
+  "name": "AEROVUE - Aerial Discrepancy Intelligence",
+  "description": "A.U.D.I.T. Autonomous UAV Discrepancy Identification Trials platform converting aerial observations into actionable discrepancy intelligence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

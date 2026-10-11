@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-page: #07111F;
+    --bg-surface: #0D1B2A;
+    --bg-surface-elevated: #122438;
+    --border-subtle: #24364A;
+    --border-focus: #4DA3FF;
+    --text-primary: #F4F7FA;
+    --text-secondary: #8FA4B8;
+    --accent-blue: #4DA3FF;
+    --status-success: #39D98A;
+    --status-warning: #F5B942;
+    --status-critical: #FF5C6C;
+  }
+
+  body {
+    background-color: #07111F;
+    color: #F4F7FA;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    font-feature-settings: "tnum" 1, "zero" 1;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  }
+}
+
+/* Aerospace Technical Grid Pattern */
+.aerovue-grid {
+  background-image: 
+    linear-gradient(to right, rgba(36, 54, 74, 0.25) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(36, 54, 74, 0.25) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.aerovue-grid-dense {
+  background-image: 
+    linear-gradient(to right, rgba(36, 54, 74, 0.35) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(36, 54, 74, 0.35) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Subtle Technical Corner Accents */
+.tech-box-corners {
+  position: relative;
+}
+.tech-box-corners::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 6px;
+  height: 6px;
+  border-top: 1.5px solid #4DA3FF;
+  border-left: 1.5px solid #4DA3FF;
+  pointer-events: none;
+}
+.tech-box-corners::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 6px;
+  height: 6px;
+  border-bottom: 1.5px solid #4DA3FF;
+  border-right: 1.5px solid #4DA3FF;
+  pointer-events: none;
+}
+
+/* Technical Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #07111F;
+}
+::-webkit-scrollbar-thumb {
+  background: #24364A;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4DA3FF;
+}
