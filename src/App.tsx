@@ -33,7 +33,9 @@ import {
   SimulationParams,
   InventoryItem,
   UAVTelemetry,
+  MissionFlightPlan,
 } from './types';
+import { PlannedMissionSpec } from './services/hardwareAbstraction';
 import { DEFAULT_CONFIDENCE_WEIGHTS, INITIAL_UAV_TELEMETRY } from './data/mockWarehouseData';
 
 export default function App() {
@@ -138,6 +140,50 @@ export default function App() {
     }
   };
 
+  // Execute Autonomous Scan with Planned Mission
+  const handleExecutePlanScan = async (
+    plan: MissionFlightPlan,
+    spec: PlannedMissionSpec
+  ): Promise<{ success: boolean; session?: ScanSession; error?: string }> => {
+    setIsScanning(true);
+    try {
+      if (!plan || !plan.waypoints || plan.waypoints.length === 0) {
+        throw new Error('Flight plan has no valid waypoints.');
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      const planIdentifier = plan.planId || plan.missionId || `MSN-${Date.now().toString(36).toUpperCase()}`;
+      const res = await apiService.triggerScan({
+        planId: planIdentifier,
+        flightDurationSeconds: plan.metrics.estimatedFlightDurationSeconds,
+        coveragePercentage: plan.metrics.coveragePercentage,
+        uavId: `AeroVue-Raven-04 (${planIdentifier})`,
+        triggerType: 'SIMULATION_CYCLE',
+      });
+
+      setDiscrepancies(res.discrepancies);
+      setBins(res.bins);
+      const newSummary = await apiService.getRiskSummary();
+      setSummary(newSummary);
+      const newHistory = await apiService.getHistory();
+      setHistory(newHistory);
+      const newInv = await apiService.getInventory();
+      setInventory(newInv);
+
+      if (res.discrepancies.length > 0) {
+        setSelectedDiscrepancy(res.discrepancies[0]);
+      }
+
+      return { success: true, session: res.session };
+    } catch (err: any) {
+      console.error('Autonomous scan execution failed:', err);
+      return { success: false, error: err?.message || 'Execution failed' };
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
   // Select discrepancy and route to Scan Analysis workstation
   const handleSelectDiscrepancy = (disc: DiscrepancyRecord) => {
     setSelectedDiscrepancy(disc);
@@ -209,6 +255,8 @@ export default function App() {
                 onNavigatePage={(page) => setActivePage(page)}
                 telemetry={telemetry}
                 onOpenJudgeTour={() => setIsJudgeTourOpen(true)}
+                activeSession={history[0]}
+                isScanning={isScanning}
               />
             )}
 
@@ -216,7 +264,12 @@ export default function App() {
               <UavMissionPlannerPage
                 onNavigateToSimulation={() => setActivePage('simulation-lab')}
                 onNavigateToAnalysis={() => setActivePage('scan-analysis')}
+                onNavigateToDiscrepancies={() => setActivePage('discrepancies')}
+                onNavigateToInventory={() => setActivePage('inventory')}
+                onNavigateToOverview={() => setActivePage('overview')}
+                onExecutePlanScan={handleExecutePlanScan}
                 telemetry={telemetry}
+                isScanning={isScanning}
               />
             )}
 
@@ -226,7 +279,7 @@ export default function App() {
                 allDiscrepancies={discrepancies}
                 onSelectDiscrepancy={(d) => setSelectedDiscrepancy(d)}
                 onUpdateVerification={handleUpdateVerification}
-                onOpenReFlight={() => setActivePage('simulation-lab')}
+                onOpenReFlight={() => setActivePage('mission-planner')}
               />
             )}
 
@@ -248,8 +301,10 @@ export default function App() {
 
                 <DiscrepancyTable
                   discrepancies={discrepancies}
-                  onSelectDiscrepancy={handleSelectDiscrepancy}
+                  onSelectDiscrepancy={(d) => setSelectedDiscrepancy(d)}
                   selectedDiscrepancyId={selectedDiscrepancy?.id}
+                  onUpdateVerification={handleUpdateVerification}
+                  onOpenReFlight={() => setActivePage('mission-planner')}
                 />
               </div>
             )}

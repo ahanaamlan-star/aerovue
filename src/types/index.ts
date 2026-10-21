@@ -338,6 +338,7 @@ export interface MissionWaypointNode {
 
 export interface MissionFlightPlan {
   missionId: string;
+  planId?: string;
   missionName: string;
   state: MissionState;
   createdAt: string;

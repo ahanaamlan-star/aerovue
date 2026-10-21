@@ -182,7 +182,7 @@ export const HistoricalScansView: React.FC<HistoricalScansViewProps> = ({
             {lifecycleCounts.persistent}
           </span>
           <span className="text-[10px] text-[#8FA4B8] block truncate">
-            Observed across $\ge 2$ consecutive scans
+            Observed across ≥ 2 consecutive scans
           </span>
         </div>
 

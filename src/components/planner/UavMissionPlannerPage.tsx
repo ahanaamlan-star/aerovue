@@ -34,11 +34,13 @@ import {
   MissionState,
   MissionWaypointNode,
   UAVTelemetry,
+  ScanSession,
 } from '../../types';
 import {
   missionPlannerService,
   PlannedMissionSpec,
 } from '../../services/hardwareAbstraction';
+import { apiService } from '../../services/apiService';
 import {
   Navigation,
   Compass,
@@ -61,18 +63,33 @@ import {
   Check,
   XCircle,
   ExternalLink,
+  Scan,
+  X,
 } from 'lucide-react';
 
 interface UavMissionPlannerPageProps {
   onNavigateToSimulation?: () => void;
   onNavigateToAnalysis?: () => void;
+  onNavigateToDiscrepancies?: () => void;
+  onNavigateToInventory?: () => void;
+  onNavigateToOverview?: () => void;
+  onExecutePlanScan?: (
+    plan: MissionFlightPlan,
+    spec: PlannedMissionSpec
+  ) => Promise<{ success: boolean; session?: ScanSession; error?: string }>;
   telemetry?: UAVTelemetry;
+  isScanning?: boolean;
 }
 
 export const UavMissionPlannerPage: React.FC<UavMissionPlannerPageProps> = ({
   onNavigateToSimulation,
   onNavigateToAnalysis,
+  onNavigateToDiscrepancies,
+  onNavigateToInventory,
+  onNavigateToOverview,
+  onExecutePlanScan,
   telemetry,
+  isScanning = false,
 }) => {
   // Configurable Mission Inputs
   const [warehouseBoundary, setWarehouseBoundary] = useState({
@@ -94,6 +111,12 @@ export const UavMissionPlannerPage: React.FC<UavMissionPlannerPageProps> = ({
   const [isSimulatingFlight, setIsSimulatingFlight] = useState<boolean>(false);
   const [safetyWarnings, setSafetyWarnings] = useState<string[]>([]);
   const [scannedGridBlocks, setScannedGridBlocks] = useState<number[]>([]);
+
+  // Phase 2: Connected Autonomous Scan Execution State
+  const [showConfirmScanModal, setShowConfirmScanModal] = useState<boolean>(false);
+  const [executedSessionResult, setExecutedSessionResult] = useState<ScanSession | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+  const [isExecutingScan, setIsExecutingScan] = useState<boolean>(false);
 
   // Starting Docks Coordinates
   const docks = useMemo(
@@ -171,6 +194,50 @@ export const UavMissionPlannerPage: React.FC<UavMissionPlannerPageProps> = ({
     setMissionState('PLANNED');
     setActiveWaypointIndex(0);
     setScannedGridBlocks([]);
+    setExecutedSessionResult(null);
+    setExecutionError(null);
+  };
+
+  // Execute Autonomous Scan with Current Flight Plan
+  const handleConfirmExecuteScan = async () => {
+    if (!missionPlan) {
+      setExecutionError('No active flight plan available to execute.');
+      return;
+    }
+    if (missionPlan.waypoints.length === 0) {
+      setExecutionError('Flight plan has 0 waypoints. Plan cannot be executed.');
+      return;
+    }
+
+    setIsExecutingScan(true);
+    setExecutionError(null);
+
+    try {
+      if (onExecutePlanScan) {
+        const res = await onExecutePlanScan(missionPlan, currentSpec);
+        if (res.success && res.session) {
+          setExecutedSessionResult(res.session);
+          setShowConfirmScanModal(false);
+        } else {
+          setExecutionError(res.error || 'Scan execution failed.');
+        }
+      } else {
+        const planIdentifier = missionPlan.planId || missionPlan.missionId || `MSN-${Date.now().toString(36).toUpperCase()}`;
+        const res = await apiService.triggerScan({
+          planId: planIdentifier,
+          flightDurationSeconds: missionPlan.metrics.estimatedFlightDurationSeconds,
+          coveragePercentage: missionPlan.metrics.coveragePercentage,
+          uavId: `AeroVue-Raven-04 (Plan ${planIdentifier})`,
+          triggerType: 'SIMULATION_CYCLE',
+        });
+        setExecutedSessionResult(res.session);
+        setShowConfirmScanModal(false);
+      }
+    } catch (err: any) {
+      setExecutionError(err?.message || 'Autonomous scan execution failed.');
+    } finally {
+      setIsExecutingScan(false);
+    }
   };
 
   // Simulated Flight Waypoint Stepping Timer
@@ -306,11 +373,26 @@ export const UavMissionPlannerPage: React.FC<UavMissionPlannerPageProps> = ({
             </button>
           )}
 
+          {/* Action 3: Execute Autonomous Scan with this Plan */}
+          {missionState === 'COMPLETE' && (
+            <button
+              onClick={() => {
+                setExecutionError(null);
+                setShowConfirmScanModal(true);
+              }}
+              disabled={isExecutingScan || isScanning}
+              className="px-4 py-1.5 bg-[#4DA3FF] hover:bg-[#3d8ee6] text-[#07111F] font-bold rounded text-xs transition-colors flex items-center gap-1.5 shadow-md shadow-[#4DA3FF]/20"
+            >
+              <Scan className="h-3.5 w-3.5" />
+              <span>{isExecutingScan ? 'EXECUTING SCAN...' : 'EXECUTE AUTONOMOUS SCAN WITH THIS PLAN'}</span>
+            </button>
+          )}
+
           {/* Handoff to other stages */}
           {missionState === 'COMPLETE' && onNavigateToAnalysis && (
             <button
               onClick={onNavigateToAnalysis}
-              className="px-3.5 py-1.5 bg-[#4DA3FF] hover:bg-[#3d8ee6] text-[#07111F] font-bold rounded text-xs transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-[#122438] hover:bg-[#1b324b] text-[#4DA3FF] border border-[#24364A] hover:border-[#4DA3FF] font-bold rounded text-xs transition-colors flex items-center gap-1.5"
             >
               <span>INSPECT IN SCAN ANALYSIS</span>
               <ArrowRight className="h-3 w-3" />
@@ -318,6 +400,73 @@ export const UavMissionPlannerPage: React.FC<UavMissionPlannerPageProps> = ({
           )}
         </div>
       </div>
+
+      {/* Autonomous Scan Execution Result Banner */}
+      {executedSessionResult && (
+        <div className="rounded border border-[#39D98A]/60 bg-[#39D98A]/10 p-3.5 space-y-2 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="h-5 w-5 text-[#39D98A] shrink-0" />
+              <div>
+                <div className="font-bold text-[#F4F7FA] text-xs flex items-center gap-2">
+                  <span>AUTONOMOUS SCAN COMPLETED & PERSISTED</span>
+                  <span className="px-1.5 py-0.2 rounded bg-[#39D98A]/20 text-[#39D98A] border border-[#39D98A]/40 text-[9px] font-bold">
+                    ACTIVE SESSION UPDATED
+                  </span>
+                </div>
+                <span className="text-[10px] text-[#8FA4B8] block mt-0.5">
+                  Scan ID: <strong className="text-[#39D98A]">{executedSessionResult.id}</strong> · {executedSessionResult.totalItemsScanned} items audited · {executedSessionResult.discrepanciesFound} discrepancies flagged · {executedSessionResult.coveragePercentage}% coverage
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {onNavigateToDiscrepancies && (
+                <button
+                  onClick={onNavigateToDiscrepancies}
+                  className="px-3 py-1.5 bg-[#F5B942] hover:bg-[#e5ab37] text-[#07111F] font-bold rounded text-xs transition-colors flex items-center gap-1 shadow-sm"
+                >
+                  <span>Review Discrepancies ({executedSessionResult.discrepanciesFound})</span>
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              )}
+              {onNavigateToAnalysis && (
+                <button
+                  onClick={onNavigateToAnalysis}
+                  className="px-3 py-1.5 bg-[#4DA3FF] hover:bg-[#3d8ee6] text-[#07111F] font-bold rounded text-xs transition-colors flex items-center gap-1 shadow-sm"
+                >
+                  <span>Inspect Evidence</span>
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              )}
+              {onNavigateToOverview && (
+                <button
+                  onClick={onNavigateToOverview}
+                  className="px-3 py-1.5 bg-[#0D1B2A] border border-[#24364A] hover:border-[#4DA3FF] text-[#F4F7FA] font-bold rounded text-xs transition-colors"
+                >
+                  <span>Mission Overview</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Execution Error Banner if any */}
+      {executionError && (
+        <div className="p-3 rounded border border-[#FF5C6C]/60 bg-[#FF5C6C]/10 text-xs text-[#FF5C6C] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>SCAN EXECUTION FAILED: {executionError}</span>
+          </div>
+          <button
+            onClick={() => setExecutionError(null)}
+            className="text-[10px] text-[#FF5C6C] underline hover:text-[#ff808d]"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Safety Warnings Banner if any */}
       {safetyWarnings.length > 0 && (
@@ -626,7 +775,7 @@ export const UavMissionPlannerPage: React.FC<UavMissionPlannerPageProps> = ({
               <div className="p-2.5 rounded bg-[#07111F] border border-[#24364A] space-y-1">
                 <span className="text-[#4DA3FF] font-bold block">2. TelemetrySource Interface</span>
                 <p className="text-[#8FA4B8] text-[10px] leading-relaxed">
-                  Streams live $[X, Y, Z]$ coordinates, GPS/SLAM position, battery voltage, and optical altitude from flight controller (PX4 / ArduPilot).
+                  Streams live [X, Y, Z] coordinates, GPS/SLAM position, battery voltage, and optical altitude from flight controller (PX4 / ArduPilot).
                 </p>
               </div>
 
@@ -818,6 +967,136 @@ export const UavMissionPlannerPage: React.FC<UavMissionPlannerPageProps> = ({
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal: Execute Autonomous Scan with this Plan */}
+      {showConfirmScanModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-[#07111F]/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div
+            className="w-full max-w-xl rounded-xl border border-[#24364A] bg-[#0D1B2A] shadow-2xl shadow-black/80 overflow-hidden flex flex-col font-mono"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-scan-modal-title"
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-3.5 bg-[#07111F] border-b border-[#24364A] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Scan className="h-4 w-4 text-[#4DA3FF]" />
+                <h3
+                  id="confirm-scan-modal-title"
+                  className="text-xs font-bold text-[#F4F7FA] tracking-wide uppercase"
+                >
+                  CONFIRM AUTONOMOUS SCAN EXECUTION (SIMULATED)
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowConfirmScanModal(false)}
+                disabled={isExecutingScan}
+                className="p-1 rounded text-[#8FA4B8] hover:text-[#F4F7FA] transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 text-xs overflow-y-auto max-h-[70vh]">
+              {/* Mission Plan Overview Card */}
+              <div className="p-3.5 rounded border border-[#24364A] bg-[#07111F] space-y-2.5">
+                <div className="flex items-center justify-between border-b border-[#24364A]/80 pb-2">
+                  <span className="text-[10px] text-[#8FA4B8] uppercase font-bold">
+                    FLIGHT PLAN SPECIFICATION
+                  </span>
+                  <span className="text-[10px] text-[#4DA3FF] font-bold">
+                    {missionPlan?.planId || 'PLAN-DEFAULT'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div>
+                    <span className="text-[9px] text-[#8FA4B8] block">TARGET ZONE:</span>
+                    <strong className="text-[#F4F7FA]">{inspectionZone}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-[#8FA4B8] block">ALTITUDE:</span>
+                    <strong className="text-[#4DA3FF]">{altitude} m</strong>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-[#8FA4B8] block">WAYPOINT NODES:</span>
+                    <strong className="text-[#F4F7FA]">{missionPlan?.waypoints.length ?? 0} waypoints</strong>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-[#8FA4B8] block">TRAJECTORY DISTANCE:</span>
+                    <strong className="text-[#F4F7FA]">
+                      {(missionPlan?.metrics.totalDistanceMeters ?? 64.2).toFixed(1)} m
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-[#8FA4B8] block">CALCULATED COVERAGE:</span>
+                    <strong className="text-[#39D98A]">
+                      {missionPlan?.metrics.coveragePercentage ?? 94}%
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-[#8FA4B8] block">CAMERA FOV & SWEEP:</span>
+                    <strong className="text-[#F4F7FA]">{fov}° · {footprint.area} m²</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Safety & Validation Checklist */}
+              <div className="p-3 rounded border border-[#24364A] bg-[#07111F] space-y-1.5 text-[11px]">
+                <div className="flex items-center gap-1.5 text-[#39D98A] font-bold text-[10px] uppercase">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  <span>PRE-FLIGHT VALIDATION PASSED</span>
+                </div>
+                <div className="text-[10px] text-[#8FA4B8]">
+                  {safetyWarnings.length > 0
+                    ? `Noted Warnings: ${safetyWarnings.join(' · ')}`
+                    : 'Clearance validated. No rack collision corridors or perimeter violations detected.'}
+                </div>
+              </div>
+
+              {/* Simulation Safety Disclaimer */}
+              <div className="p-3 rounded border border-[#F5B942]/40 bg-[#F5B942]/10 space-y-1 text-[11px] text-[#F5B942]">
+                <div className="flex items-center gap-1.5 font-bold text-[10px] uppercase">
+                  <Info className="h-3.5 w-3.5 shrink-0" />
+                  <span>SIMULATED MISSION NOTICE</span>
+                </div>
+                <p className="text-[10px] text-[#8FA4B8] leading-relaxed">
+                  This execution runs a high-fidelity synthetic UAV scan. No physical drone commands are issued. Observations will be correlated with the WMS inventory ledger and posted to the Discrepancy Intelligence Engine.
+                </p>
+              </div>
+
+              {executionError && (
+                <div className="p-2.5 rounded border border-[#FF5C6C] bg-[#FF5C6C]/10 text-xs text-[#FF5C6C]">
+                  {executionError}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="px-5 py-3.5 bg-[#07111F] border-t border-[#24364A] flex items-center justify-end gap-2.5">
+              <button
+                onClick={() => setShowConfirmScanModal(false)}
+                disabled={isExecutingScan}
+                className="px-3.5 py-1.5 rounded bg-[#0D1B2A] hover:bg-[#122438] text-[#8FA4B8] hover:text-[#F4F7FA] border border-[#24364A] text-xs font-bold transition-colors"
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleConfirmExecuteScan}
+                disabled={isExecutingScan}
+                className="px-4 py-1.5 rounded bg-[#4DA3FF] hover:bg-[#3d8ee6] text-[#07111F] text-xs font-bold transition-colors flex items-center gap-1.5 shadow-md shadow-[#4DA3FF]/20 disabled:opacity-50"
+              >
+                <Play className="h-3.5 w-3.5 fill-current" />
+                <span>
+                  {isExecutingScan ? 'EXECUTING SCAN...' : 'CONFIRM & EXECUTE SIMULATED SCAN'}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

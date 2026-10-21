@@ -104,7 +104,7 @@ const JOURNEY_STEPS: JourneyStep[] = [
       'Real-time edge inference benchmark (78 ms on simulated Jetson AGX Orin)',
       'Thin bounding boxes with SKU labels, class probability, and bin coordinate association',
     ],
-    systemEvidence: 'Perception output: 1,284 inventory units localized with 90.4% mean confidence.',
+    systemEvidence: 'Perception output: 118 inventory units localized across 11 active storage bays with 90.4% mean confidence (Simulated CV).',
     statusBadge: 'PERCEPTION READY',
   },
   {

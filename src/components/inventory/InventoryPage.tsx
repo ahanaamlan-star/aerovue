@@ -71,6 +71,65 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({
     }
   };
 
+  const escapeCsv = (val: string | number | undefined | null): string => {
+    if (val === undefined || val === null) return '""';
+    const str = String(val);
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const handleExportCsv = () => {
+    if (filteredRows.length === 0) return;
+
+    const headers = [
+      'Location',
+      'Zone',
+      'Rack',
+      'Shelf',
+      'SKU',
+      'Item Description',
+      'Category',
+      'Expected Qty',
+      'Observed Qty',
+      'Variance Delta',
+      'Status',
+      'Criticality',
+      'Confidence Pct',
+      'Has Discrepancy',
+    ];
+
+    const csvRows = filteredRows.map((r) => [
+      escapeCsv(r.location),
+      escapeCsv(r.zone),
+      escapeCsv(r.rack),
+      escapeCsv(r.shelf),
+      escapeCsv(r.sku),
+      escapeCsv(r.itemName),
+      escapeCsv(r.category),
+      escapeCsv(r.expected),
+      escapeCsv(r.observed),
+      escapeCsv(r.delta > 0 ? `+${r.delta}` : r.delta),
+      escapeCsv(r.status),
+      escapeCsv(r.criticality),
+      escapeCsv(r.confidence),
+      escapeCsv(r.discrepancy ? 'YES' : 'NO'),
+    ].join(','));
+
+    const csvContent = [headers.join(','), ...csvRows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const timestamp = new Date().toISOString().slice(0, 10);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `aerovue_reconciled_inventory_${timestamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-4 font-mono">
       {/* Top Header */}
@@ -84,10 +143,29 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-[#8FA4B8]">
-          <span>TOTAL BAYS: <strong className="text-[#F4F7FA]">{bins.length}</strong></span>
-          <span>·</span>
-          <span>DISCREPANT: <strong className="text-[#F5B942]">{discrepancies.length}</strong></span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-xs text-[#8FA4B8]">
+            <span>TOTAL BAYS: <strong className="text-[#F4F7FA]">{bins.length}</strong></span>
+            <span>·</span>
+            <span>DISCREPANT: <strong className="text-[#F5B942]">{discrepancies.length}</strong></span>
+          </div>
+          <button
+            onClick={handleExportCsv}
+            disabled={filteredRows.length === 0}
+            className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 border ${
+              filteredRows.length === 0
+                ? 'bg-[#122438]/50 text-[#8FA4B8]/40 border-[#24364A]/50 cursor-not-allowed'
+                : 'bg-[#122438] hover:bg-[#1c3654] text-[#4DA3FF] border-[#24364A] hover:border-[#4DA3FF] shadow-sm'
+            }`}
+            title={
+              filteredRows.length === 0
+                ? 'No inventory rows match current filter settings'
+                : `Export ${filteredRows.length} inventory records to CSV`
+            }
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>EXPORT CSV ({filteredRows.length})</span>
+          </button>
         </div>
       </div>
 

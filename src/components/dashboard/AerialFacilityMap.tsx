@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { WarehouseBin, DiscrepancyRecord } from '../../types';
+import { WarehouseBin, DiscrepancyRecord, UAVTelemetry } from '../../types';
 import { Navigation, Crosshair, ZoomIn, ZoomOut, Layers, Radio } from 'lucide-react';
 
 interface AerialFacilityMapProps {
@@ -8,6 +8,8 @@ interface AerialFacilityMapProps {
   onSelectBin: (bin: WarehouseBin) => void;
   selectedBinId?: string;
   uavCoordinates?: { x: number; y: number; z: number };
+  telemetry?: UAVTelemetry;
+  headingDegrees?: number;
 }
 
 export const AerialFacilityMap: React.FC<AerialFacilityMapProps> = ({
@@ -16,10 +18,45 @@ export const AerialFacilityMap: React.FC<AerialFacilityMapProps> = ({
   onSelectBin,
   selectedBinId,
   uavCoordinates = { x: 14.8, y: 8.2, z: 3.6 },
+  telemetry,
+  headingDegrees,
 }) => {
   const [activeLayer, setActiveLayer] = useState<'all' | 'anomalies' | 'coverage'>('all');
   const [zoomLevel, setZoomLevel] = useState(1);
   const [hoveredBin, setHoveredBin] = useState<WarehouseBin | null>(null);
+
+  // Dynamic UAV position calculation:
+  // Project warehouse boundary convention: 30.0m length (X) by 20.0m width (Y).
+  // Safely extract coordinates from telemetry or uavCoordinates prop.
+  const rawX = telemetry?.coordinates?.x ?? uavCoordinates?.x;
+  const rawY = telemetry?.coordinates?.y ?? uavCoordinates?.y;
+  const rawZ = telemetry?.altitudeMeters ?? telemetry?.coordinates?.z ?? uavCoordinates?.z ?? 3.6;
+  const heading = telemetry?.headingDegrees ?? headingDegrees ?? 0;
+  const droneName = telemetry?.droneId ? telemetry.droneId.split(' ')[0] : 'UAV-RAVEN-04';
+
+  // Convert to map-relative percentages:
+  // - Metric coordinates: x in [0, 30m], y in [0, 20m]
+  // - Normalized coordinates: x in [0, 1.0], y in [0, 1.0]
+  // - Percentage coordinates: x in [0, 100]
+  let mapX = 38;
+  let mapY = 34;
+
+  if (typeof rawX === 'number' && Number.isFinite(rawX) && typeof rawY === 'number' && Number.isFinite(rawY)) {
+    if (rawX >= 0 && rawX <= 1.0 && rawY >= 0 && rawY <= 1.0) {
+      mapX = rawX * 100;
+      mapY = rawY * 100;
+    } else if (rawX <= 30.0 && rawY <= 20.0) {
+      mapX = (rawX / 30.0) * 100;
+      mapY = (rawY / 20.0) * 100;
+    } else {
+      mapX = rawX;
+      mapY = rawY;
+    }
+  }
+
+  // Prevent drone icon and camera frustum from escaping map boundaries
+  const boundedLeft = Math.min(88, Math.max(12, mapX));
+  const boundedTop = Math.min(85, Math.max(15, mapY));
 
   // Group bins into 3 primary zones & racks
   const zoneA_racks = ['Rack A01', 'Rack A02'];
@@ -158,33 +195,43 @@ export const AerialFacilityMap: React.FC<AerialFacilityMapProps> = ({
         <div
           className="absolute z-20 pointer-events-none transition-all duration-700 flex flex-col items-center"
           style={{
-            left: '38%',
-            top: '34%',
+            left: `${boundedLeft.toFixed(1)}%`,
+            top: `${boundedTop.toFixed(1)}%`,
             transform: 'translate(-50%, -50%)',
           }}
         >
-          {/* Projected Camera Footprint Frustum Box */}
-          <div className="w-28 h-20 border border-[#4DA3FF]/80 bg-[#4DA3FF]/10 rounded-sm -translate-y-2 flex flex-col items-center justify-between p-1">
-            <span className="text-[8px] text-[#4DA3FF] tracking-wider uppercase">
-              CAM FRUSTUM · FOV 84°
-            </span>
-            <div className="w-2 h-2 border-t border-l border-[#4DA3FF]" />
-            <span className="text-[7px] text-[#8FA4B8] font-mono">SWEEP: 4.8m²</span>
+          {/* Rotatable UAV and Camera Frustum group aligned with telemetry orientation */}
+          <div
+            className="flex flex-col items-center transition-transform duration-500"
+            style={{
+              transform: `rotate(${heading}deg)`,
+              transformOrigin: 'center 40px',
+            }}
+          >
+            {/* Projected Camera Footprint Frustum Box */}
+            <div className="w-28 h-20 border border-[#4DA3FF]/80 bg-[#4DA3FF]/10 rounded-sm -translate-y-2 flex flex-col items-center justify-between p-1">
+              <span className="text-[8px] text-[#4DA3FF] tracking-wider uppercase font-bold">
+                CAM FRUSTUM · FOV {telemetry?.cameraFovDeg ?? 84}°
+              </span>
+              <div className="w-2 h-2 border-t border-l border-[#4DA3FF]" />
+              <span className="text-[7px] text-[#8FA4B8] font-mono">SWEEP: 4.8m²</span>
+            </div>
+
+            {/* UAV Chevrons / Rotor Symbol */}
+            <div className="relative -mt-10 flex items-center justify-center">
+              <div className="h-6 w-6 rounded-full bg-[#0D1B2A] border-2 border-[#4DA3FF] shadow-lg shadow-[#4DA3FF]/40 flex items-center justify-center">
+                <Navigation className="h-3 w-3 text-[#4DA3FF] transform rotate-45" />
+              </div>
+              {/* Rotor blade circles */}
+              <div className="absolute -top-1 -left-1 h-2 w-2 rounded-full border border-[#4DA3FF]/70" />
+              <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full border border-[#4DA3FF]/70" />
+              <div className="absolute -bottom-1 -left-1 h-2 w-2 rounded-full border border-[#4DA3FF]/70" />
+              <div className="absolute -bottom-1 -right-1 h-2 w-2 rounded-full border border-[#4DA3FF]/70" />
+            </div>
           </div>
 
-          {/* UAV Chevrons / Rotor Symbol */}
-          <div className="relative -mt-10 flex items-center justify-center">
-            <div className="h-6 w-6 rounded-full bg-[#0D1B2A] border-2 border-[#4DA3FF] shadow-lg shadow-[#4DA3FF]/40 flex items-center justify-center">
-              <Navigation className="h-3 w-3 text-[#4DA3FF] transform rotate-45" />
-            </div>
-            {/* Rotor blade circles */}
-            <div className="absolute -top-1 -left-1 h-2 w-2 rounded-full border border-[#4DA3FF]/70" />
-            <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full border border-[#4DA3FF]/70" />
-            <div className="absolute -bottom-1 -left-1 h-2 w-2 rounded-full border border-[#4DA3FF]/70" />
-            <div className="absolute -bottom-1 -right-1 h-2 w-2 rounded-full border border-[#4DA3FF]/70" />
-          </div>
-          <span className="text-[9px] text-[#4DA3FF] bg-[#07111F]/90 px-1 py-0.2 rounded border border-[#24364A] mt-1 font-bold">
-            UAV-RAVEN-04 [3.6m ALT]
+          <span className="text-[9px] text-[#4DA3FF] bg-[#07111F]/90 px-1.5 py-0.5 rounded border border-[#24364A] mt-1 font-bold whitespace-nowrap">
+            {droneName} [{Number.isFinite(rawZ) ? rawZ.toFixed(1) : '3.6'}m ALT] · SIM
           </span>
         </div>
 
@@ -343,7 +390,7 @@ export const AerialFacilityMap: React.FC<AerialFacilityMapProps> = ({
           </div>
         )}
         <div className="font-mono text-[10px] text-[#8FA4B8]">
-          GRID COORDS: X={uavCoordinates.x}m Y={uavCoordinates.y}m Z={uavCoordinates.z}m
+          GRID COORDS: X={typeof rawX === 'number' && Number.isFinite(rawX) ? rawX.toFixed(1) : '14.8'}m Y={typeof rawY === 'number' && Number.isFinite(rawY) ? rawY.toFixed(1) : '8.2'}m Z={typeof rawZ === 'number' && Number.isFinite(rawZ) ? rawZ.toFixed(1) : '3.6'}m <span className="text-[#4DA3FF]">[SIMULATED]</span>
         </div>
       </div>
     </div>

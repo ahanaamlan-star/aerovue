@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { DiscrepancyRecord, DiscrepancyType } from '../../types';
+import { EvidenceStudio } from '../evidence/EvidenceStudio';
 import {
   Search,
   ArrowUpDown,
@@ -9,12 +10,21 @@ import {
   Clock,
   CheckCircle2,
   ArrowUpRight,
+  Download,
+  X,
+  FileText,
 } from 'lucide-react';
 
 interface DiscrepancyTableProps {
   discrepancies: DiscrepancyRecord[];
   onSelectDiscrepancy: (discrepancy: DiscrepancyRecord) => void;
   selectedDiscrepancyId?: string;
+  onUpdateVerification?: (
+    id: string,
+    status: DiscrepancyRecord['verification']['status'],
+    notes?: string
+  ) => void;
+  onOpenReFlight?: () => void;
 }
 
 type FilterCategory =
@@ -36,11 +46,100 @@ export const DiscrepancyTable: React.FC<DiscrepancyTableProps> = ({
   discrepancies,
   onSelectDiscrepancy,
   selectedDiscrepancyId,
+  onUpdateVerification,
+  onOpenReFlight,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterCategory>('ALL');
   const [sortField, setSortField] = useState<SortField>('risk');
   const [sortAsc, setSortAsc] = useState(false);
+  const [evidenceDrawerId, setEvidenceDrawerId] = useState<string | null>(null);
+
+  // Derive fresh active discrepancy from master list to prevent stale data
+  const drawerDiscrepancy = useMemo(() => {
+    if (!evidenceDrawerId) return null;
+    return discrepancies.find((d) => d.id === evidenceDrawerId) || null;
+  }, [evidenceDrawerId, discrepancies]);
+
+  // Keyboard navigation: Escape key closes Evidence Studio drawer
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && evidenceDrawerId) {
+        setEvidenceDrawerId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [evidenceDrawerId]);
+
+  const escapeCsv = (val: string | number | undefined | null): string => {
+    if (val === undefined || val === null) return '""';
+    const str = String(val);
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const handleExportCsv = () => {
+    if (sorted.length === 0) return;
+
+    const headers = [
+      'Discrepancy ID',
+      'Location Code',
+      'Warehouse',
+      'Zone',
+      'Rack',
+      'Shelf',
+      'Bin',
+      'Discrepancy Type',
+      'Expected SKU',
+      'Observed SKU',
+      'Expected Qty',
+      'Observed Qty',
+      'Net Delta',
+      'Risk Level',
+      'Risk Score',
+      'Confidence Score',
+      'Temporal Lifecycle',
+      'Verification Status',
+      'Timestamp',
+    ];
+
+    const csvRows = sorted.map((d) => [
+      escapeCsv(d.id),
+      escapeCsv(d.location.binDisplay),
+      escapeCsv(d.location.warehouse),
+      escapeCsv(d.location.zone),
+      escapeCsv(d.location.rack),
+      escapeCsv(d.location.shelf),
+      escapeCsv(d.location.bin),
+      escapeCsv(d.discrepancyType),
+      escapeCsv(d.expectedSku || 'N/A'),
+      escapeCsv(d.observedSku || 'N/A'),
+      escapeCsv(d.expectedQuantity),
+      escapeCsv(d.observedQuantity),
+      escapeCsv(d.quantityDelta > 0 ? `+${d.quantityDelta}` : d.quantityDelta),
+      escapeCsv(d.risk.level),
+      escapeCsv(d.risk.score),
+      escapeCsv(d.confidence.overall),
+      escapeCsv(d.temporalLifecycle || (d.persistence.isPersistent ? 'PERSISTENT' : 'NEW')),
+      escapeCsv(d.verification.status),
+      escapeCsv(d.timestamp),
+    ].join(','));
+
+    const csvContent = [headers.join(','), ...csvRows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const timestamp = new Date().toISOString().slice(0, 10);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `aerovue_discrepancies_${timestamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const filterTabs: { id: FilterCategory; label: string }[] = [
     { id: 'ALL', label: 'ALL DISCREPANCIES' },
@@ -176,8 +275,27 @@ export const DiscrepancyTable: React.FC<DiscrepancyTableProps> = ({
             />
           </div>
 
-          <div className="text-xs text-[#8FA4B8]">
-            Showing <strong className="text-[#F4F7FA]">{sorted.length}</strong> of {discrepancies.length} records
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-[#8FA4B8]">
+              Showing <strong className="text-[#F4F7FA]">{sorted.length}</strong> of {discrepancies.length} records
+            </div>
+            <button
+              onClick={handleExportCsv}
+              disabled={sorted.length === 0}
+              className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                sorted.length === 0
+                  ? 'bg-[#122438]/50 text-[#8FA4B8]/40 border-[#24364A]/50 cursor-not-allowed'
+                  : 'bg-[#122438] hover:bg-[#1c3654] text-[#4DA3FF] border-[#24364A] hover:border-[#4DA3FF] shadow-sm'
+              }`}
+              title={
+                sorted.length === 0
+                  ? 'No discrepancies match current filter settings'
+                  : `Export ${sorted.length} discrepancies to CSV`
+              }
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>EXPORT CSV ({sorted.length})</span>
+            </button>
           </div>
         </div>
 
@@ -379,11 +497,13 @@ export const DiscrepancyTable: React.FC<DiscrepancyTableProps> = ({
                           onClick={(e) => {
                             e.stopPropagation();
                             onSelectDiscrepancy(d);
+                            setEvidenceDrawerId(d.id);
                           }}
-                          className="px-2 py-0.5 text-[10px] font-bold text-[#4DA3FF] bg-[#122438] hover:bg-[#1b324b] border border-[#24364A] rounded transition-colors inline-flex items-center gap-0.5"
+                          className="px-2.5 py-1 text-[10px] font-bold text-[#4DA3FF] bg-[#122438] hover:bg-[#1b324b] border border-[#24364A] hover:border-[#4DA3FF] rounded transition-colors inline-flex items-center gap-1 shadow-xs"
+                          title="Open Evidence Studio Drawer for this anomaly"
                         >
                           <Eye className="h-3 w-3" />
-                          <span>Inspect</span>
+                          <span>Evidence Studio</span>
                         </button>
                       </td>
                     </tr>
@@ -394,6 +514,56 @@ export const DiscrepancyTable: React.FC<DiscrepancyTableProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Evidence Studio Drawer / Modal Dialog */}
+      {evidenceDrawerId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-[#07111F]/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div
+            className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-xl border border-[#24364A] bg-[#07111F] shadow-2xl shadow-black/80 overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="evidence-studio-title"
+          >
+            {/* Drawer Header */}
+            <div className="px-5 py-3.5 bg-[#0D1B2A] border-b border-[#24364A] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-2 w-2 rounded-full bg-[#4DA3FF] animate-pulse" />
+                <div>
+                  <h3
+                    id="evidence-studio-title"
+                    className="text-sm font-bold text-[#F4F7FA] tracking-wide uppercase"
+                  >
+                    EVIDENCE STUDIO · ANOMALY AUDIT TRAIL
+                  </h3>
+                  <span className="text-[10px] text-[#8FA4B8] block">
+                    Inspection record for{' '}
+                    {drawerDiscrepancy
+                      ? `${drawerDiscrepancy.id} (Bin ${drawerDiscrepancy.location.binDisplay})`
+                      : 'Discrepancy'}{' '}
+                    · Press [Esc] to exit
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setEvidenceDrawerId(null)}
+                className="p-1.5 rounded-lg text-[#8FA4B8] hover:text-[#F4F7FA] hover:bg-[#122438] border border-transparent hover:border-[#24364A] transition-colors"
+                aria-label="Close Evidence Studio"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Drawer Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#07111F]">
+              <EvidenceStudio
+                discrepancy={drawerDiscrepancy}
+                onUpdateVerification={onUpdateVerification || (() => {})}
+                onOpenReFlight={onOpenReFlight}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -381,8 +381,11 @@ export class SimulatedMissionPlanner implements MissionPlanner {
       Math.round((estimatedScanArea / totalWarehouseArea) * 100)
     );
 
+    const missionId = `MSN-${Date.now().toString(36).toUpperCase()}`;
+
     return {
-      missionId: `MSN-${Date.now().toString(36).toUpperCase()}`,
+      missionId,
+      planId: missionId,
       missionName: `WAREHOUSE INSPECTION: ${spec.inspectionZone.replace('_', ' ')}`,
       state: 'PLANNED',
       createdAt: new Date().toISOString().replace('T', ' ').substring(0, 19),

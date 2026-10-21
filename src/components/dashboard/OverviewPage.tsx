@@ -1,5 +1,5 @@
 import React from 'react';
-import { WarehouseBin, DiscrepancyRecord, UAVTelemetry } from '../../types';
+import { WarehouseBin, DiscrepancyRecord, UAVTelemetry, ScanSession } from '../../types';
 import { RiskSummary } from '../../services/apiService';
 import { AerialFacilityMap } from './AerialFacilityMap';
 import {
@@ -31,6 +31,8 @@ interface OverviewPageProps {
   onNavigatePage: (page: any) => void;
   telemetry?: UAVTelemetry;
   onOpenJudgeTour?: () => void;
+  activeSession?: ScanSession;
+  isScanning?: boolean;
 }
 
 export const OverviewPage: React.FC<OverviewPageProps> = ({
@@ -41,6 +43,8 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
   onNavigatePage,
   telemetry,
   onOpenJudgeTour,
+  activeSession,
+  isScanning = false,
 }) => {
   // Find high priority discrepancies for the right intelligence panel
   const priorityDiscrepancies = [...discrepancies]
@@ -106,23 +110,23 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] font-mono text-[#8FA4B8]">
           <div className="px-2 py-1 rounded bg-[#0D1B2A] border border-[#24364A]">
             <span className="text-[#8FA4B8]/60">SCAN ID:</span>{' '}
-            <span className="text-[#F4F7FA] font-bold">AU-2026-001</span>
+            <span className="text-[#F4F7FA] font-bold">{activeSession?.id || 'SCAN-2026-10-05-A'}</span>
           </div>
           <div className="px-2 py-1 rounded bg-[#0D1B2A] border border-[#24364A]">
             <span className="text-[#8FA4B8]/60">MISSION:</span>{' '}
-            <span className="text-[#F4F7FA] font-bold">WH-01</span>
+            <span className="text-[#F4F7FA] font-bold">{activeSession?.warehouseId || 'WH-01'}</span>
           </div>
           <div className="px-2 py-1 rounded bg-[#0D1B2A] border border-[#24364A]">
             <span className="text-[#8FA4B8]/60">ZONE:</span>{' '}
-            <span className="text-[#F4F7FA] font-bold">A-03</span>
+            <span className="text-[#F4F7FA] font-bold">ALL BAYS (A–C)</span>
           </div>
           <div className="px-2 py-1 rounded bg-[#0D1B2A] border border-[#24364A]">
-            <span className="text-[#8FA4B8]/60">FRAME:</span>{' '}
-            <span className="text-[#4DA3FF] font-bold">004281</span>
+            <span className="text-[#8FA4B8]/60">SENSOR:</span>{' '}
+            <span className="text-[#4DA3FF] font-bold">RGB 4K (SIM)</span>
           </div>
           <div className="px-2 py-1 rounded bg-[#0D1B2A] border border-[#24364A]">
             <span className="text-[#8FA4B8]/60">TIME:</span>{' '}
-            <span className="text-[#F4F7FA] font-bold">14:32:08</span>
+            <span className="text-[#F4F7FA] font-bold">{summary.lastScanTimestamp.split(' ')[1] || '07:14:00'}</span>
           </div>
         </div>
       </div>
@@ -270,6 +274,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
             discrepancies={discrepancies}
             onSelectBin={handleSelectBin}
             uavCoordinates={telemetry?.coordinates}
+            telemetry={telemetry}
           />
 
           {/* Conceptual Pipeline Status Banner */}
@@ -298,47 +303,69 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
             <div className="flex items-center justify-between border-b border-[#24364A] pb-2 text-xs">
               <div className="flex items-center gap-2">
                 <span className="relative flex h-2 w-2">
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#39D98A]"></span>
+                  <span
+                    className={`relative inline-flex rounded-full h-2 w-2 ${
+                      isScanning ? 'bg-[#F5B942] animate-ping' : 'bg-[#39D98A]'
+                    }`}
+                  />
                 </span>
                 <span className="font-bold text-[#F4F7FA] tracking-wider text-[11px] uppercase">
                   CURRENT SCAN
                 </span>
               </div>
-              <span className="text-[10px] text-[#4DA3FF] bg-[#122438] px-1.5 py-0.5 rounded border border-[#24364A]">
-                SIMULATION
+              <span className="text-[10px] text-[#4DA3FF] bg-[#122438] px-1.5 py-0.5 rounded border border-[#24364A] font-bold">
+                SIMULATED SESSION
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="p-2 rounded bg-[#07111F] border border-[#24364A]/80">
-                <span className="text-[10px] text-[#8FA4B8] block uppercase">SOURCE</span>
-                <span className="text-[#F4F7FA] font-bold text-xs truncate block">Simulation UAV-01</span>
+                <span className="text-[10px] text-[#8FA4B8] block uppercase">SOURCE AIRFRAME</span>
+                <span
+                  className="text-[#F4F7FA] font-bold text-xs truncate block"
+                  title={telemetry?.droneId || activeSession?.uavId || 'AeroVue-Raven-04'}
+                >
+                  {telemetry?.droneId ? telemetry.droneId.split(' ')[0] : (activeSession?.uavId || 'Raven-04')} (Sim)
+                </span>
               </div>
 
               <div className="p-2 rounded bg-[#07111F] border border-[#24364A]/80">
-                <span className="text-[10px] text-[#8FA4B8] block uppercase">ALTITUDE</span>
-                <span className="text-[#4DA3FF] font-bold text-xs">12.4 m</span>
+                <span className="text-[10px] text-[#8FA4B8] block uppercase">UAV ALTITUDE</span>
+                <span className="text-[#4DA3FF] font-bold text-xs">
+                  {(telemetry?.altitudeMeters ?? telemetry?.coordinates?.z ?? 3.6).toFixed(1)} m
+                </span>
               </div>
 
               <div className="p-2 rounded bg-[#07111F] border border-[#24364A]/80">
-                <span className="text-[10px] text-[#8FA4B8] block uppercase">CAMERA</span>
-                <span className="text-[#F4F7FA] font-bold text-xs">RGB 4K 60FPS</span>
+                <span className="text-[10px] text-[#8FA4B8] block uppercase">OPTICAL SENSOR</span>
+                <span className="text-[#F4F7FA] font-bold text-xs truncate block">
+                  RGB 4K · {telemetry?.cameraFovDeg ?? 84}° FOV
+                </span>
               </div>
 
               <div className="p-2 rounded bg-[#07111F] border border-[#24364A]/80">
-                <span className="text-[10px] text-[#8FA4B8] block uppercase">AREA COVERED</span>
-                <span className="text-[#F4F7FA] font-bold text-xs">428 m²</span>
+                <span className="text-[10px] text-[#8FA4B8] block uppercase">FACILITY COVERAGE</span>
+                <span className="text-[#F4F7FA] font-bold text-xs">
+                  {summary.scanCoveragePct}% ({bins.length} Bays)
+                </span>
               </div>
 
               <div className="p-2 rounded bg-[#07111F] border border-[#24364A]/80">
                 <span className="text-[10px] text-[#8FA4B8] block uppercase">OBJECTS DETECTED</span>
-                <span className="text-[#F4F7FA] font-bold text-xs">1,284</span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-[#F4F7FA] font-bold text-xs">{summary.totalItemsScanned}</span>
+                  <span className="text-[9px] text-[#4DA3FF]">units (Sim CV)</span>
+                </div>
               </div>
 
               <div className="p-2 rounded bg-[#07111F] border border-[#24364A]/80">
                 <span className="text-[10px] text-[#8FA4B8] block uppercase">SCAN STATUS</span>
-                <span className="text-[#39D98A] font-bold text-xs flex items-center gap-1">
-                  ● ACTIVE
+                <span
+                  className={`font-bold text-xs flex items-center gap-1 ${
+                    isScanning ? 'text-[#F5B942]' : 'text-[#39D98A]'
+                  }`}
+                >
+                  ● {isScanning ? 'SCANNING...' : 'COMPLETED (SIM)'}
                 </span>
               </div>
             </div>

@@ -156,8 +156,14 @@ class AerovueApiService {
     imageSrc?: string;
     customBins?: WarehouseBin[];
     triggerType?: ScanSession['triggerType'];
+    planId?: string;
+    flightDurationSeconds?: number;
+    coveragePercentage?: number;
+    uavId?: string;
   }): Promise<{ session: ScanSession; discrepancies: DiscrepancyRecord[]; bins: WarehouseBin[] }> {
-    const scanId = `SCAN-${Date.now().toString(36).toUpperCase()}`;
+    const scanId = options?.planId
+      ? `SCAN-${options.planId.replace(/[^A-Za-z0-9]/g, '').slice(0, 8)}-${Date.now().toString(36).toUpperCase()}`
+      : `SCAN-${Date.now().toString(36).toUpperCase()}`;
     const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
     const targetBins = options?.customBins || this.bins;
@@ -180,7 +186,7 @@ class AerovueApiService {
       warehouseId: 'WH-01',
       timestamp,
       triggerType: options?.triggerType || 'AUTONOMOUS_SCHEDULED',
-      uavId: 'AeroVue-Raven-04',
+      uavId: options?.uavId || 'AeroVue-Raven-04',
       totalBinsScanned: targetBins.length,
       totalItemsScanned: targetBins.reduce((acc, b) => acc + b.observedQty, 0),
       discrepanciesFound: result.summary.discrepanciesCount,
@@ -188,9 +194,9 @@ class AerovueApiService {
       highCount: result.summary.highCount,
       mediumCount: result.summary.mediumCount,
       lowCount: result.summary.lowCount,
-      coveragePercentage: 100,
+      coveragePercentage: options?.coveragePercentage ?? 100,
       averageConfidence: result.summary.averageConfidence,
-      flightDurationSeconds: 160 + Math.floor(Math.random() * 40),
+      flightDurationSeconds: options?.flightDurationSeconds ?? (160 + Math.floor(Math.random() * 40)),
       imageCount: targetBins.length * 3,
     };
 
